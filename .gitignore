@@ -1,0 +1,4 @@
+.python-version
+face_landmarker.task
+.venv/
+.vscode/
