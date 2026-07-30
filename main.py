@@ -1841,11 +1841,19 @@ from src.cameraClient import CameraClient
 from src.screenClient import ScreenClient
 from src.server import Server
 from src.sleepDetectorEngine import SleepDetectorEngine
+from src.esp32Listener import resolve_esp32_ip
 from src.utility import Utility
 
 def main():
 
-    DEVICE_IP = "10.105.38.79"    
+    # DEVICE_IP = "10.187.95.79"    
+    # DEVICE_IP = socket.gethostbyname("microsleep.local")
+    try:
+        DEVICE_IP = resolve_esp32_ip()
+    except Exception as e:
+        print(f"[!] mDNS Discovery failed: {e}")
+        # Fallback to manual entry or static IP if discovery fails
+        DEVICE_IP = input("Enter ESP32 IP manually: ")
 
     BOOT_MELODY_TIME = 1.0     # durasi melodi 'B'
     HAT_ADJUST_TIME  = 10.0    # jeda membenahi posisi topi (sebelum fase 1)

@@ -1,6 +1,6 @@
 
 import os
-import urllib
+import urllib.request
 from typing import Final
 import numpy as np
 

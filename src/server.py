@@ -73,60 +73,271 @@ class Server:
             """Returns simple embedded HTML dashboard."""
             return """
             <!DOCTYPE html>
-            <html>
+            <html lang="en">
             <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
                 <title>Microsleep Telemetry Dashboard</title>
                 <style>
-                    body { font-family: monospace; background: #121212; color: #00dcff; margin: 20px; }
-                    .container { display: flex; gap: 20px; }
-                    .video-panel { border: 2px solid #333; border-radius: 8px; overflow: hidden; }
-                    .telemetry-panel { background: #1e1e1e; padding: 15px; border-radius: 8px; width: 300px; }
-                    .stat { margin-bottom: 8px; font-size: 14px; }
-                    .val { color: #fff; float: right; }
-                    .badge { padding: 2px 6px; border-radius: 4px; font-weight: bold; }
-                    .online { background: #00aa44; color: white; }
-                    .offline { background: #aa0000; color: white; }
+                    :root {
+                        --bg-color: #0f1115;
+                        --panel-bg: #161920;
+                        --panel-border: #262b36;
+                        --text-main: #e2e8f0;
+                        --text-muted: #8a94a6;
+                        --accent-blue: #38bdf8;
+                        --status-online: #10b981;
+                        --status-offline: #ef4444;
+                    }
+
+                    * {
+                        box-sizing: border-box;
+                        margin: 0;
+                        padding: 0;
+                    }
+
+                    body {
+                        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+                        background-color: var(--bg-color);
+                        color: var(--text-main);
+                        padding: 40px 20px;
+                        line-height: 1.5;
+                        display: flex;
+                        flex-direction: column;
+                        align-items: center; /* Centers the main layout container */
+                        min-height: 100vh;
+                    }
+
+                    .dashboard-wrapper {
+                        width: 100%;
+                        max-width: 1000px; /* Constrains total layout width for centered look */
+                        display: flex;
+                        flex-direction: column;
+                        align-items: center;
+                    }
+
+                    header {
+                        width: 100%;
+                        text-align: center; /* Centered title and subtitle */
+                        margin-bottom: 28px;
+                        border-bottom: 1px solid var(--panel-border);
+                        padding-bottom: 20px;
+                    }
+
+                    h1 {
+                        font-size: 1.4rem;
+                        font-weight: 600;
+                        letter-spacing: -0.02em;
+                        color: var(--text-main);
+                    }
+
+                    .subtitle {
+                        font-size: 0.85rem;
+                        color: var(--text-muted);
+                        margin-top: 4px;
+                    }
+
+                    .dashboard-grid {
+                        display: flex;
+                        justify-content: center; /* Centers video & gyro cards side-by-side */
+                        align-items: stretch;
+                        gap: 20px;
+                        width: 100%;
+                        flex-wrap: wrap; /* Stacks gracefully on narrower screens */
+                    }
+
+                    .card {
+                        background: var(--panel-bg);
+                        border: 1px solid var(--panel-border);
+                        border-radius: 8px;
+                        overflow: hidden;
+                    }
+
+                    .video-card {
+                        flex: 0 0 auto;
+                    }
+
+                    .video-card img {
+                        display: block;
+                        width: 640px;
+                        height: 480px;
+                        background-color: #000;
+                    }
+
+                    .telemetry-card {
+                        width: 320px;
+                        padding: 20px;
+                        display: flex;
+                        flex-direction: column;
+                    }
+
+                    .card-header {
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: center;
+                        margin-bottom: 20px;
+                        padding-bottom: 12px;
+                        border-bottom: 1px solid var(--panel-border);
+                    }
+
+                    .card-title {
+                        font-size: 0.85rem;
+                        font-weight: 600;
+                        text-transform: uppercase;
+                        letter-spacing: 0.05em;
+                        color: var(--text-muted);
+                    }
+
+                    .status-badge {
+                        display: inline-flex;
+                        align-items: center;
+                        gap: 6px;
+                        font-size: 0.75rem;
+                        font-weight: 600;
+                        padding: 4px 10px;
+                        border-radius: 20px;
+                        letter-spacing: 0.03em;
+                    }
+
+                    .status-badge .indicator {
+                        width: 6px;
+                        height: 6px;
+                        border-radius: 50%;
+                    }
+
+                    .status-badge.online {
+                        background: rgba(16, 185, 129, 0.1);
+                        color: var(--status-online);
+                        border: 1px solid rgba(16, 185, 129, 0.2);
+                    }
+
+                    .status-badge.online .indicator {
+                        background-color: var(--status-online);
+                        box-shadow: 0 0 8px var(--status-online);
+                    }
+
+                    .status-badge.offline {
+                        background: rgba(239, 68, 68, 0.1);
+                        color: var(--status-offline);
+                        border: 1px solid rgba(239, 68, 68, 0.2);
+                    }
+
+                    .status-badge.offline .indicator {
+                        background-color: var(--status-offline);
+                    }
+
+                    .metrics-group {
+                        display: flex;
+                        flex-direction: column;
+                        gap: 14px;
+                    }
+
+                    .metric-row {
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: center;
+                        font-size: 0.9rem;
+                    }
+
+                    .metric-label {
+                        color: var(--text-muted);
+                    }
+
+                    .metric-value {
+                        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+                        font-weight: 500;
+                        color: var(--text-main);
+                    }
+
+                    .divider {
+                        height: 1px;
+                        background-color: var(--panel-border);
+                        margin: 6px 0;
+                    }
                 </style>
             </head>
             <body>
-                <h2>Microsleep Detector Dashboard</h2>
-                <div class="container">
-                    <div class="video-panel">
-                        <img src="/video_feed" width="640" height="480" alt="Stream">
-                    </div>
-                    <div class="telemetry-panel">
-                        <h3>Gyro Status</h3>
-                        <div class="stat">Status: <span id="connected" class="badge offline">DISCONNECTED</span></div>
-                        <div class="stat">Pitch: <span id="pitch" class="val">0.0°</span></div>
-                        <div class="stat">Roll: <span id="roll" class="val">0.0°</span></div>
-                        <div class="stat">Rate: <span id="rate" class="val">0.0</span></div>
-                        <div class="stat">Pitch Rate: <span id="prate" class="val">0.0</span></div>
-                        <hr style="border-color: #333;">
-                        <div class="stat">Acc Dev: <span id="accdev" class="val">0.0</span></div>
-                        <div class="stat">Msg Count: <span id="msg_count" class="val">0</span></div>
-                    </div>
+                <div class="dashboard-wrapper">
+                    <!-- Header Title (Centered) -->
+                    <header>
+                        <h1>Microsleep Telemetry Dashboard</h1>
+                        <div class="subtitle">Real-Time Vision & Inertial Sensor Monitoring</div>
+                    </header>
+
+                    <!-- Centered Main Content -->
+                    <main class="dashboard-grid">
+                        <!-- Video Stream Feed -->
+                        <div class="card video-card">
+                            <img src="/video_feed" alt="Live Camera Feed">
+                        </div>
+
+                        <!-- Telemetry Panel -->
+                        <div class="card telemetry-card">
+                            <div class="card-header">
+                                <span class="card-title">IMU Telemetry</span>
+                                <div id="status-badge" class="status-badge offline">
+                                    <span class="indicator"></span>
+                                    <span id="status-text">DISCONNECTED</span>
+                                </div>
+                            </div>
+
+                            <div class="metrics-group">
+                                <div class="metric-row">
+                                    <span class="metric-label">Pitch Angle</span>
+                                    <span id="pitch" class="metric-value">0.0°</span>
+                                </div>
+                                <div class="metric-row">
+                                    <span class="metric-label">Roll Angle</span>
+                                    <span id="roll" class="metric-value">0.0°</span>
+                                </div>
+                                <div class="metric-row">
+                                    <span class="metric-label">Total Angular Rate</span>
+                                    <span id="rate" class="metric-value">0.0</span>
+                                </div>
+                                <div class="metric-row">
+                                    <span class="metric-label">Pitch Rate</span>
+                                    <span id="prate" class="metric-value">0.0</span>
+                                </div>
+
+                                <div class="divider"></div>
+
+                                <div class="metric-row">
+                                    <span class="metric-label">Accel Deviation</span>
+                                    <span id="accdev" class="metric-value">0.00</span>
+                                </div>
+                                <div class="metric-row">
+                                    <span class="metric-label">Packets Received</span>
+                                    <span id="msg_count" class="metric-value">0</span>
+                                </div>
+                            </div>
+                        </div>
+                    </main>
                 </div>
 
                 <script>
-                    // Poll Gyro Data via SSE (Server-Sent Events)
                     const evtSource = new EventSource("/api/gyro/stream");
+
                     evtSource.onmessage = function(event) {
                         const data = JSON.parse(event.data);
-                        
-                        document.getElementById('pitch').innerText = data.pitch.toFixed(1) + "°";
-                        document.getElementById('roll').innerText = data.roll.toFixed(1) + "°";
-                        document.getElementById('rate').innerText = data.rate.toFixed(1);
-                        document.getElementById('prate').innerText = data.prate.toFixed(1);
-                        document.getElementById('accdev').innerText = data.accdev.toFixed(2);
-                        document.getElementById('msg_count').innerText = data.msg_count;
 
-                        const connEl = document.getElementById('connected');
-                        if(data.connected) {
-                            connEl.innerText = "CONNECTED";
-                            connEl.className = "badge online";
+                        // Safe value updates
+                        document.getElementById('pitch').innerText = (data.pitch ?? 0).toFixed(1) + "°";
+                        document.getElementById('roll').innerText = (data.roll ?? 0).toFixed(1) + "°";
+                        document.getElementById('rate').innerText = (data.rate ?? 0).toFixed(1);
+                        document.getElementById('prate').innerText = (data.prate ?? 0).toFixed(1);
+                        document.getElementById('accdev').innerText = (data.accdev ?? 0).toFixed(2);
+                        document.getElementById('msg_count').innerText = data.msg_count ?? 0;
+
+                        // Update Status Badge UI
+                        const badgeEl = document.getElementById('status-badge');
+                        const textEl = document.getElementById('status-text');
+
+                        if (data.connected) {
+                            badgeEl.className = "status-badge online";
+                            textEl.innerText = "ONLINE";
                         } else {
-                            connEl.innerText = "DISCONNECTED";
-                            connEl.className = "badge offline";
+                            badgeEl.className = "status-badge offline";
+                            textEl.innerText = "DISCONNECTED";
                         }
                     };
                 </script>
@@ -150,7 +361,7 @@ class Server:
                     with self._gyro_lock:
                         payload = json.dumps(self._latest_gyro)
                     yield f"data: {payload}\n\n"
-                    await asyncio.sleep(0.1) # 10 Hz refresh rate
+                    await asyncio.sleep(0.01) # 10 Hz refresh rate
 
             return StreamingResponse(event_generator(), media_type="text/event-stream")
 
