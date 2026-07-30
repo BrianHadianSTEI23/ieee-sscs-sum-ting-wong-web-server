@@ -265,7 +265,7 @@ class SleepDetectorEngine:
     # ═════════════════════════════════════════════
 
     def run_calibration(self, sock, detector, detector_img, ts, gyro=None,
-                    first_prep=None):
+                    first_prep=None, web_server=None):
         """
         6 fase kalibrasi MATA, dipandu buzzer, tanpa tombol.
         first_prep: lama jeda sebelum fase PERTAMA (dipakai untuk jeda
@@ -279,7 +279,7 @@ class SleepDetectorEngine:
         for i, phase in enumerate(self.PHASES):
             prep = first_prep if (i == 0 and first_prep is not None) else Utility.PREP_TIME
             arr = CameraClient.record_phase(sock, detector, detector_img, ts, phase,
-                            gyro=gyro, prep_time=prep)
+                            gyro=gyro, prep_time=prep, web_server=web_server)
             if arr is None:
                 return None
             data[phase["key"]] = {"kind": phase["kind"], "X": arr}
@@ -288,7 +288,7 @@ class SleepDetectorEngine:
                 f"dark={arr[:, 2].mean():.3f}   spread={arr[:, 5].mean():.3f}")
         return data
 
-    def run_head_calibration(self, sock, gyro):
+    def run_head_calibration(self, sock, gyro, web_server=None):
         """6 fase kalibrasi KEPALA, dipandu buzzer, tanpa tombol."""
         print("\n" + "=" * 60)
         print("  KALIBRASI KEPALA (gyro + accelerometer) — 6 tahap")
@@ -296,7 +296,8 @@ class SleepDetectorEngine:
 
         data = {}
         for phase in self.HEAD_PHASES:
-            d = CameraClient.record_head_phase(sock, gyro, phase, prep_time=Utility.PREP_TIME)
+            d = CameraClient.record_head_phase(sock, gyro, phase, prep_time=Utility.PREP_TIME, 
+                                               web_server=web_server)
             if d is None:
                 return None
             data[phase["key"]] = d
@@ -612,7 +613,7 @@ class SleepDetectorEngine:
     # ═════════════════════════════════════════════
     #  MODE DETEKSI
     # ═════════════════════════════════════════════
-    def run_detection(self, sock, detector, detector_img, ts, prof, gyro, head_prof):
+    def run_detection(self, sock, detector, detector_img, ts, prof, gyro, head_prof, web_server = None):
         w_vec = np.array(prof["w"])
         mu    = np.array(prof["mu"])
         sd    = np.array(prof["sd"])
@@ -742,7 +743,7 @@ class SleepDetectorEngine:
                 # Postur menunduk (bertahan)
                 if g["pitch"] > PITCH_TH:
                     if not head_down:
-                        
+
                         head_down = True
                         head_down_start = now
                     head_down_duration = now - head_down_start
@@ -889,6 +890,11 @@ class SleepDetectorEngine:
             cv2.putText(disp, f"{fps:.0f} fps", (w - 60, h - 12),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.42, (150, 150, 150), 1,
                         cv2.LINE_AA)
+
+            # !! PUSH UPDATES TO WEB SERVER HERE
+            if web_server is not None:
+                web_server.update_frame(disp)
+                web_server.update_gyro(gyro.get_state())
 
             cv2.imshow("Microsleep Detector", disp)
             k = cv2.waitKey(1) & 0xFF

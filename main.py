@@ -1866,9 +1866,13 @@ def main():
     camClient = CameraClient()
     gyClient = GyroClient()
     scrlient = ScreenClient()
-    serv = Server()
+    web_server = Server(host="0.0.0.0", port=8000)
     sdengine = SleepDetectorEngine()
 
+    # Init the web server
+    web_server.run_in_thread()
+
+    # ensure the model (install the model)
     Utility.ensure_model()
 
     # ── Detektor utama: mode VIDEO (cepat, pakai pelacakan) ──
@@ -1932,6 +1936,7 @@ def main():
         print()
 
     try:
+
         while True:
             # ═══════════════════════════════════════════
             #  RANGKAIAN KALIBRASI 12 FASE (6 mata + 6 kepala)

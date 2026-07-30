@@ -84,7 +84,7 @@ class CameraClient:
     #  PEREKAMAN FASE KALIBRASI (eye)
     # ═════════════════════════════════════════════
     def record_phase(self, sock, detector, detector_img, ts, phase, gyro=None,
-                    prep_time=Utility.PREP_TIME):
+                    prep_time=Utility.PREP_TIME, web_server = None):
         key    = phase["key"]
         durasi = phase["durasi"]
         feats  = []
@@ -160,6 +160,13 @@ class CameraClient:
 
             cv2.rectangle(disp, (0, h - 6), (int(w * min(elapsed / total, 1.0)), h),
                         (0, 220, 255), -1)
+
+            # !! PUSH UPDATES TO WEB SERVER HERE
+            if web_server is not None:
+                web_server.update_frame(disp)
+                if gyro is not None:
+                    web_server.update_gyro(gyro.get_state())
+
             cv2.imshow("Microsleep Detector", disp)
             if (cv2.waitKey(1) & 0xFF) == 27:
                 return None
@@ -177,7 +184,7 @@ class CameraClient:
     # ═════════════════════════════════════════════
     #  PEREKAMAN FASE KALIBRASI (GYRO / HEAD)
     # ═════════════════════════════════════════════
-    def record_head_phase(sock, gyro, phase, prep_time=Utility.PREP_TIME):
+    def record_head_phase(sock, gyro, phase, prep_time=Utility.PREP_TIME, web_server = None):
         pitches, feats = [], []
 
         # Buang sampel lama supaya tidak tercampur fase sebelumnya
@@ -240,6 +247,13 @@ class CameraClient:
 
             cv2.rectangle(disp, (0, h - 6), (int(w * min(elapsed / total, 1.0)), h),
                         (0, 220, 255), -1)
+            
+            # !! PUSH UPDATES TO WEB SERVER HERE
+            if web_server is not None:
+                web_server.update_frame(disp)
+                if gyro is not None:
+                    web_server.update_gyro(gyro.get_state())
+
             cv2.imshow("Microsleep Detector", disp)
             if (cv2.waitKey(1) & 0xFF) == 27:
                 return None
