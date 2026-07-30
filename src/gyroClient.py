@@ -28,8 +28,8 @@ class GyroClient:
     GYRO_MAX_AGE : Final[float] = 2.5
 
     def __init__(self, ip = GYRO_IP, port = GYRO_PORT, reconnect_interval=2.0, buffer_size=400):
-        self.ip = ip
-        self.port = port
+        self._ip = ip
+        self._port = port
         self.reconnect_interval = reconnect_interval
 
         self._sock = None
@@ -76,11 +76,11 @@ class GyroClient:
                 self._connect_and_listen()
             except socket.timeout:
                 attempt += 1
-                print(f"[gyro] GAGAL #{attempt}: timeout menghubungi {self.ip}:{self.port}")
+                print(f"[gyro] GAGAL #{attempt}: timeout menghubungi {self._ip}:{self._port}")
                 print("       -> IP kemungkinan salah, atau ESP tidak di WiFi yang sama.")
             except ConnectionRefusedError:
                 attempt += 1
-                print(f"[gyro] GAGAL #{attempt}: koneksi ditolak {self.ip}:{self.port}")
+                print(f"[gyro] GAGAL #{attempt}: koneksi ditolak {self._ip}:{self._port}")
                 print("       -> ESP hidup tapi port salah, atau server belum siap.")
             except OSError as e:
                 attempt += 1
@@ -96,10 +96,10 @@ class GyroClient:
                 time.sleep(self.reconnect_interval)
 
     def _connect_and_listen(self):
-        print(f"[gyro] Menghubungkan ke {self.ip}:{self.port} ...")
+        print(f"[gyro] Menghubungkan ke {self._ip}:{self._port} ...")
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.settimeout(5.0)
-        s.connect((self.ip, self.port))
+        s.connect((self._ip, self._port))
 
         s.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         try:

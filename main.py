@@ -1,56 +1,63 @@
-"""
-Microsleep Detector MULTI-FITUR + LDA + FUSI GYRO
-==================================================
-VERSI SATU MIKROKONTROLER (ESP32-S3 WROOM CAM N16R8)
+# """
+# Microsleep Detector MULTI-FITUR + LDA + FUSI GYRO
+# ==================================================
+# VERSI SATU MIKROKONTROLER (ESP32-S3 WROOM CAM N16R8)
 
-Semua sensor kini berada di SATU board:
-  - OV2640      -> streaming JPEG di port 1234
-  - GY-521      -> streaming JSON di port 1235
-  - Buzzer      -> dikendalikan laptop lewat port 1235
+# Semua sensor kini berada di SATU board:
+#   - OV2640      -> streaming JPEG di port 1234
+#   - GY-521      -> streaming JSON di port 1235
+#   - Buzzer      -> dikendalikan laptop lewat port 1235
 
-Dua sumber data yang difusi:
-  1. KAMERA -> skor LDA dari EAR + fitur tampilan mata
-  2. GYRO   -> sudut menunduk (pitch) + angguk terkantuk (LDA gerakan)
+# Dua sumber data yang difusi:
+#   1. KAMERA -> skor LDA dari EAR + fitur tampilan mata
+#   2. GYRO   -> sudut menunduk (pitch) + angguk terkantuk (LDA gerakan)
 
-  Aturan fusi (3 jalur, mana pun yang lebih dulu terpenuhi):
-    A. Kamera SENDIRIAN, mata tertutup >= MICROSLEEP_DURATION (1.5s)
-       -> fallback aman kalau data gyro terputus.
-    B. Kamera + kepala MENUNDUK bertahan >= 0.8s
-       -> pola tertidur perlahan, kepala terkulai.
-    C. Kamera + ANGGUKAN terdeteksi, mata tertutup >= 0.5s
-       -> pola microsleep klasik: kepala jatuh lalu tersentak.
+#   Aturan fusi (3 jalur, mana pun yang lebih dulu terpenuhi):
+#     A. Kamera SENDIRIAN, mata tertutup >= MICROSLEEP_DURATION (1.5s)
+#        -> fallback aman kalau data gyro terputus.
+#     B. Kamera + kepala MENUNDUK bertahan >= 0.8s
+#        -> pola tertidur perlahan, kepala terkulai.
+#     C. Kamera + ANGGUKAN terdeteksi, mata tertutup >= 0.5s
+#        -> pola microsleep klasik: kepala jatuh lalu tersentak.
 
-  Buzzer dikendalikan sepenuhnya dari laptop lewat gyro.set_buzzer().
+#   Buzzer dikendalikan sepenuhnya dari laptop lewat gyro.set_buzzer().
 
-Install:
-    pip install mediapipe opencv-python numpy
+# Install:
+#     pip install mediapipe opencv-python numpy
 
-TIDAK butuh file pendukung lain — GyroClient sudah disatukan ke file ini.
-Model face_landmarker.task diunduh otomatis saat pertama dijalankan.
+# TIDAK butuh file pendukung lain — GyroClient sudah disatukan ke file ini.
+# Model face_landmarker.task diunduh otomatis saat pertama dijalankan.
 
-Jalankan:
-    python microsleep_single_esp32s3.py
+# Jalankan:
+#     python microsleep_single_esp32s3.py
 
-Kontrol saat DETEKSI:
-    q  -> keluar        r  -> kalibrasi ulang
-    d  -> debug fitur   e  -> tampil/sembunyikan kotak ROI mata
-"""
+# Kontrol saat DETEKSI:
+#     q  -> keluar        r  -> kalibrasi ulang
+#     d  -> debug fitur   e  -> tampil/sembunyikan kotak ROI mata
+# """
 
-import os
-# Redam log telemetri MediaPipe (pesan "clearcut" yang mengganggu)
-os.environ["GLOG_minloglevel"] = "2"
-os.environ["ABSL_MIN_LOG_LEVEL"] = "2"
+# import os
+# # Redam log telemetri MediaPipe (pesan "clearcut" yang mengganggu)
+# os.environ["GLOG_minloglevel"] = "2"
+# os.environ["ABSL_MIN_LOG_LEVEL"] = "2"
 
-import socket
-# import struct
-import time
-# import json
-# import urllib.request
-import cv2
-# import numpy as np
-# import mediapipe as mp
-from mediapipe.tasks import python
-from mediapipe.tasks.python import vision
+# import socket
+# # import struct
+# import time
+# # import json
+# # import urllib.request
+# import cv2
+# # import numpy as np
+# # import mediapipe as mp
+# from mediapipe.tasks import python
+# from mediapipe.tasks.python import vision
+
+# from src.gyroClient import GyroClient
+# from src.cameraClient import CameraClient
+# from src.screenClient import ScreenClient
+# from src.server import Server
+# from src.sleepDetectorEngine import SleepDetectorEngine
+# from src.utility import Utility
 
 # # ═════════════════════════════════════════════════════════════════
 # #  GyroClient — sebelumnya file terpisah (gyro_client.py),
@@ -264,7 +271,7 @@ from mediapipe.tasks.python import vision
 #  dilayani oleh perangkat yang sama.
 #  Lihat Serial Monitor saat boot untuk mendapatkan IP-nya.
 # ─────────────────────────────────────────────
-DEVICE_IP = "192.168.1.5"
+# DEVICE_IP = "192.168.1.5"
 
 # ESP32_IP = DEVICE_IP          # kamera
 # PORT     = 1234
@@ -294,9 +301,9 @@ DEVICE_IP = "192.168.1.5"
 
 # Ambang kepercayaan MediaPipe. Diturunkan karena wajah terdistorsi
 # lensa wide lebih sulit dikenali daripada wajah dari lensa normal.
-DETECT_CONFIDENCE  = 0.15
-PRESENCE_CONFIDENCE = 0.15
-TRACKING_CONFIDENCE = 0.15
+# DETECT_CONFIDENCE  = 0.15
+# PRESENCE_CONFIDENCE = 0.15
+# TRACKING_CONFIDENCE = 0.15
 
 # CLAHE: perataan kontras lokal untuk membantu MediaPipe mengunci wajah
 # saat pencahayaan tidak merata (dahi terang, mata gelap).
@@ -420,12 +427,12 @@ TRACKING_CONFIDENCE = 0.15
 # BUZZ_SUCCESS  = "S"    # kalibrasi berhasil     (~1.4 s)
 # BUZZ_FAIL     = "F"    # kalibrasi gagal        (1.0 s)
 
-BOOT_MELODY_TIME = 1.0     # durasi melodi 'B'
-HAT_ADJUST_TIME  = 10.0    # jeda membenahi posisi topi (sebelum fase 1)
+# BOOT_MELODY_TIME = 1.0     # durasi melodi 'B'
+# HAT_ADJUST_TIME  = 10.0    # jeda membenahi posisi topi (sebelum fase 1)
 # PREP_TIME        = 3.0     # jeda membaca instruksi antar fase
 # COUNTDOWN_LEAD   = 2.0     # dari 'C' dikirim s/d beep panjang berbunyi
-COUNTDOWN_TOTAL  = 2.6     # total durasi pola hitung mundur
-END_BEEP_TIME    = 0.8     # durasi beep penanda fase selesai
+# COUNTDOWN_TOTAL  = 2.6     # total durasi pola hitung mundur
+# END_BEEP_TIME    = 0.8     # durasi beep penanda fase selesai
 
 
 # ═════════════════════════════════════════════
@@ -1770,17 +1777,98 @@ END_BEEP_TIME    = 0.8     # durasi beep penanda fase selesai
 #                 f"pitch={g['pitch']:.1f} head_down={head_down} "
 #                 f"head_dur={head_down_duration:.2f}")
 
-from src.cameraClient import CameraClient 
-from src.gyroClient import GyroClient 
-from src.sleepDetectorEngine import SleepDetectorEngine 
-from src.utility import Utility 
-from src.screenClient import ScreenClient 
-
 
 # ═════════════════════════════════════════════
 #  MAIN
 # ═════════════════════════════════════════════
+
+"""
+Microsleep Detector MULTI-FITUR + LDA + FUSI GYRO
+==================================================
+VERSI SATU MIKROKONTROLER (ESP32-S3 WROOM CAM N16R8)
+
+Semua sensor kini berada di SATU board:
+  - OV2640      -> streaming JPEG di port 1234
+  - GY-521      -> streaming JSON di port 1235
+  - Buzzer      -> dikendalikan laptop lewat port 1235
+
+Dua sumber data yang difusi:
+  1. KAMERA -> skor LDA dari EAR + fitur tampilan mata
+  2. GYRO   -> sudut menunduk (pitch) + angguk terkantuk (LDA gerakan)
+
+  Aturan fusi (3 jalur, mana pun yang lebih dulu terpenuhi):
+    A. Kamera SENDIRIAN, mata tertutup >= MICROSLEEP_DURATION (1.5s)
+       -> fallback aman kalau data gyro terputus.
+    B. Kamera + kepala MENUNDUK bertahan >= 0.8s
+       -> pola tertidur perlahan, kepala terkulai.
+    C. Kamera + ANGGUKAN terdeteksi, mata tertutup >= 0.5s
+       -> pola microsleep klasik: kepala jatuh lalu tersentak.
+
+  Buzzer dikendalikan sepenuhnya dari laptop lewat gyro.set_buzzer().
+
+Install:
+    pip install mediapipe opencv-python numpy
+
+TIDAK butuh file pendukung lain — GyroClient sudah disatukan ke file ini.
+Model face_landmarker.task diunduh otomatis saat pertama dijalankan.
+
+Jalankan:
+    python microsleep_single_esp32s3.py
+
+Kontrol saat DETEKSI:
+    q  -> keluar        r  -> kalibrasi ulang
+    d  -> debug fitur   e  -> tampil/sembunyikan kotak ROI mata
+"""
+
+import os
+# Redam log telemetri MediaPipe (pesan "clearcut" yang mengganggu)
+os.environ["GLOG_minloglevel"] = "2"
+os.environ["ABSL_MIN_LOG_LEVEL"] = "2"
+
+import socket
+# import struct
+import time
+# import json
+# import urllib.request
+import cv2
+# import numpy as np
+# import mediapipe as mp
+from mediapipe.tasks import python
+from mediapipe.tasks.python import vision
+
+from src.gyroClient import GyroClient
+from src.cameraClient import CameraClient
+from src.screenClient import ScreenClient
+from src.server import Server
+from src.sleepDetectorEngine import SleepDetectorEngine
+from src.utility import Utility
+
 def main():
+
+    DEVICE_IP = "192.168.1.5"    
+
+    BOOT_MELODY_TIME = 1.0     # durasi melodi 'B'
+    HAT_ADJUST_TIME  = 10.0    # jeda membenahi posisi topi (sebelum fase 1)
+    # PREP_TIME        = 3.0     # jeda membaca instruksi antar fase
+    # COUNTDOWN_LEAD   = 2.0     # dari 'C' dikirim s/d beep panjang berbunyi
+    COUNTDOWN_TOTAL  = 2.6     # total durasi pola hitung mundur
+    END_BEEP_TIME    = 0.8     # durasi beep penanda fase selesai
+
+    # Ambang kepercayaan MediaPipe. Diturunkan karena wajah terdistorsi
+    # lensa wide lebih sulit dikenali daripada wajah dari lensa normal.
+    DETECT_CONFIDENCE  = 0.15
+    PRESENCE_CONFIDENCE = 0.15
+    TRACKING_CONFIDENCE = 0.15
+
+
+    # init all objects
+    util = Utility()
+    camClient = CameraClient()
+    gyClient = GyroClient()
+    scrlient = ScreenClient()
+    serv = Server()
+    sdengine = SleepDetectorEngine()
+
     Utility.ensure_model()
 
     # ── Detektor utama: mode VIDEO (cepat, pakai pelacakan) ──
@@ -1808,30 +1896,30 @@ def main():
     )
     detector_img = vision.FaceLandmarker.create_from_options(opts_img)
 
-    print(f"Menghubungkan ke ESP32-CAM {ESP32_IP}:{PORT} ...")
+    print(f"Menghubungkan ke ESP32-CAM {camClient._ip}:{camClient._port} ...")
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.connect((ESP32_IP, PORT))
+    sock.connect((camClient._ip, camClient._port))
     print("Terhubung ke kamera.\n")
 
-    print(f"Menghubungkan ke ESP32 gyro {GYRO_IP}:{GYRO_PORT} ...")
-    gyro = GyroClient(GYRO_IP, GYRO_PORT)
+    print(f"Menghubungkan ke ESP32 gyro {GyroClient.GYRO_IP}:{GyroClient.GYRO_PORT} ...")
+    gyro = GyroClient(GyroClient.GYRO_IP, GyroClient.GYRO_PORT)
     gyro.start()
 
-    if not wait_for_gyro(gyro, timeout=10.0, label="Menunggu data gyro"):
+    if not gyro.wait_for_gyro(gyro, timeout=10.0, label="Menunggu data gyro"):
         print("      Sistem tetap jalan; gyro akan terus dicoba di latar.")
-        print(f"      Pastikan GYRO_IP={GYRO_IP} benar dan ESP32 gyro")
+        print(f"      Pastikan GYRO_IP={GyroClient.GYRO_IP} benar dan ESP32 gyro")
         print("      ada di WiFi/hotspot yang sama.\n")
 
     ts = [0]
 
-    prof = load_profile()
+    prof = sdengine.load_profile()
     if prof is not None:
         print(f"Profil MATA ditemukan ({prof.get('waktu', '?')})")
         if input("Pakai profil mata ini? [Y/n] ").strip().lower() == "n":
             prof = None
         print()
 
-    head_prof = load_head_profile()
+    head_prof = sdengine.load_head_profile()
     if head_prof is not None:
         print(f"Profil KEPALA ditemukan ({head_prof.get('waktu', '?')})")
         print(f"  pitch_th={head_prof['pitch_threshold']:.1f}deg", end="")
@@ -1850,11 +1938,11 @@ def main():
             #  Dipandu buzzer sepenuhnya — tidak perlu tekan tombol.
             # ═══════════════════════════════════════════
             if prof is None:
-                buzzer_ok = gyro_ready(gyro)
+                buzzer_ok = gyro.gyro_ready(gyro)
 
                 if buzzer_ok:
                     # Melodi pembuka + jeda membenahi posisi topi
-                    gyro.buzz(BUZZ_BOOT)
+                    gyro.buzz(Utility.BUZZ_BOOT)
                     print("\n" + "=" * 60)
                     print("  KALIBRASI DIPANDU BUZZER — 12 FASE")
                     print("=" * 60)
@@ -1865,7 +1953,7 @@ def main():
                     print("    (hening)               -> sedang merekam")
                     print("    BEEEEEP panjang        -> fase selesai\n")
 
-                    if not screen_wait(
+                    if not scrlient.screen_wait(
                             sock, BOOT_MELODY_TIME + HAT_ADJUST_TIME,
                             "KALIBRASI AKAN DIMULAI",
                             ["Pakai topi dan benahi posisinya sekarang.",
@@ -1874,49 +1962,49 @@ def main():
                              "Fase 1 dimulai otomatis setelah hitungan ini."]):
                         print("Kalibrasi dibatalkan.")
                         break
-                    first_prep = PREP_TIME
+                    first_prep = Utility.PREP_TIME
                 else:
                     print("\n  [!] Buzzer tidak tersedia (gyro belum terhubung).")
                     print("      Kalibrasi tetap jalan, dipandu layar saja.\n")
                     first_prep = HAT_ADJUST_TIME
 
-                data = run_calibration(sock, detector, detector_img, ts,
+                data = sdengine.run_calibration(sock, detector, detector_img, ts,
                                        gyro=gyro if buzzer_ok else None,
                                        first_prep=first_prep)
                 if data is None:
                     if buzzer_ok:
-                        gyro.buzz(BUZZ_FAIL)
+                        gyro.buzz(Utility.BUZZ_FAIL)
                     print("Kalibrasi dibatalkan.")
                     break
-                prof = build_profile(data)
+                prof = sdengine.build_profile(data)
                 if prof is None:
                     if buzzer_ok:
-                        gyro.buzz(BUZZ_FAIL)
+                        gyro.buzz(Utility.BUZZ_FAIL)
                         time.sleep(1.2)
                     print("Ulangi kalibrasi.\n")
                     continue
-                save_profile(prof)
+                sdengine.save_profile(prof)
 
             # ── Kalibrasi KEPALA ──
             if head_prof is None:
-                if not gyro_ready(gyro):
+                if not gyro.gyro_ready(gyro):
                     # Jangan langsung menyerah — beri waktu reconnect.
-                    wait_for_gyro(gyro, timeout=15.0,
+                    gyro.wait_for_gyro(gyro, timeout=15.0,
                                   label="Gyro belum siap, menunggu")
 
                 while head_prof is None:
-                    if gyro_ready(gyro):
-                        hdata = run_head_calibration(sock, gyro)
+                    if gyro.gyro_ready(gyro):
+                        hdata = sdengine.run_head_calibration(sock, gyro)
                         if hdata is None:
-                            gyro.buzz(BUZZ_FAIL)
+                            gyro.buzz(Utility.BUZZ_FAIL)
                             print("Kalibrasi kepala dibatalkan. Pakai default.\n")
-                            head_prof = default_head_profile()
+                            head_prof = sdengine.default_head_profile()
                         else:
-                            head_prof = compute_head_profile(hdata)
-                            save_head_profile(head_prof)
+                            head_prof = sdengine.compute_head_profile(hdata)
+                            sdengine.save_head_profile(head_prof)
                             # ── Seluruh 12 fase selesai ──
                             berhasil = head_prof.get("nod_threshold") is not None
-                            gyro.buzz(BUZZ_SUCCESS if berhasil else BUZZ_FAIL)
+                            gyro.buzz(Utility.BUZZ_SUCCESS if berhasil else Utility.BUZZ_FAIL)
                             if berhasil:
                                 print("=" * 60)
                                 print("  KALIBRASI 12 FASE SELESAI — SISTEM SIAP")
@@ -1930,7 +2018,7 @@ def main():
                     print("\n" + "!" * 58)
                     print("  GYRO TIDAK TERHUBUNG")
                     print("!" * 58)
-                    print(f"  Target: {GYRO_IP}:{GYRO_PORT}")
+                    print(f"  Target: {GyroClient.GYRO_IP}:{GyroClient.GYRO_PORT}")
                     print("  Cek berurutan:")
                     print("    1. ESP32 gyro menyala & Serial Monitor cetak IP?")
                     print("    2. IP di Serial Monitor SAMA dengan GYRO_IP di atas?")
@@ -1941,11 +2029,11 @@ def main():
                     pilih = input("  Pilihan [c/s]: ").strip().lower()
                     if pilih == "s":
                         print("Kalibrasi kepala dilewati. Sistem pakai kamera saja.\n")
-                        head_prof = default_head_profile()
+                        head_prof = sdengine.default_head_profile()
                     else:
-                        wait_for_gyro(gyro, timeout=15.0, label="Mencoba lagi")
+                        gyro.wait_for_gyro(gyro, timeout=15.0, label="Mencoba lagi")
 
-            act = run_detection(sock, detector, detector_img, ts, prof,
+            act = sdengine.run_detection(sock, detector, detector_img, ts, prof,
                                 gyro, head_prof)
             if act == "recalibrate":
                 prof = None
