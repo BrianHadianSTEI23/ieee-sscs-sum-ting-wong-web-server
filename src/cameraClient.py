@@ -19,6 +19,12 @@ class CameraClient:
     LEFT_EYE  : Final[float] = [33, 160, 158, 133, 153, 144]
     RIGHT_EYE : Final[float] = [362, 385, 387, 263, 373, 380]
 
+    # Sudut mata (untuk menentukan ROI yang STABIL, tidak ikut mengecil
+    # saat mata tertutup — ini penting supaya ROI terbuka vs tertutup
+    # menutupi area yang sama dan bisa dibandingkan)
+    LEFT_CORNERS  : Final[tuple[int]]  = (33, 133)     # (luar, dalam)
+    RIGHT_CORNERS : Final[tuple[int]]  = (362, 263)    # (dalam, luar)
+
     # GRACE PERIOD: kalau wajah hilang SEBENTAR sementara mata sedang
     # tertutup, JANGAN reset timer. Kehilangan wajah tepat saat mata
     # menutup justru gejala khas microsleep — kalau di-reset, alarm tidak
@@ -201,21 +207,26 @@ class CameraClient:
     # ═════════════════════════════════════════════
     #  PEREKAMAN FASE KALIBRASI (eye)
     # ═════════════════════════════════════════════
+    
     def record_phase(self, sock, detector, detector_img, ts, phase, gyro=None,
-                    prep_time=Utility.PREP_TIME, web_server = None):
+                    prep_time=Utility.PREP_TIME, web_server = None, scr_client = None, 
+                    cam_client = None):
         key    = phase["key"]
         durasi = phase["durasi"]
         feats  = []
         cal_miss = 0
 
+        if scr_client is None and cam_client is None : 
+            return None
+
         # ── 1. Instruksi (lanjut OTOMATIS, tanpa tombol) ──
-        if not ScreenClient.screen_prep(sock, phase, prep_time):
+        if not scr_client.screen_prep(sock, phase, prep_time):
             return None
 
         # ── 2. Hitung mundur, diselaraskan dengan beep di ESP32 ──
         if gyro is not None:
             gyro.buzz(Utility.BUZZ_COUNT)          # beep .. beep .. BEEP-panjang
-        if not ScreenClient.screen_countdown(sock, phase, ScreenClient.COUNTDOWN_LEAD):
+        if not scr_client.screen_countdown(sock, phase, scr_client.COUNTDOWN_LEAD):
             return None
         # Beep panjang berbunyi TEPAT sekarang = aba-aba "MULAI"
 
@@ -227,7 +238,7 @@ class CameraClient:
             if elapsed >= total:
                 break
 
-            frame = ScreenClient.read_frame(sock)
+            frame = scr_client.read_frame(sock)
             if frame is None:
                 return None
             h, w = frame.shape
@@ -236,7 +247,7 @@ class CameraClient:
 
             # Deteksi dengan CLAHE + fallback IMAGE, sama seperti mode deteksi,
             # supaya fase "mata tertutup" tidak kehilangan banyak sampel.
-            lms, cal_miss = CameraClient.detect_face(detector, detector_img, frame, ts, cal_miss)
+            lms, cal_miss = cam_client.detect_face(detector, detector_img, frame, ts, cal_miss)
 
             disp = bgr.copy()
             vec = None
@@ -255,7 +266,7 @@ class CameraClient:
             if recording and vec is not None:
                 feats.append(vec)
 
-            ScreenClient.draw_panel(disp, 0, 80)
+            scr_client.draw_panel(disp, 0, 80)
             cv2.putText(disp, phase["title"], (12, 24), cv2.FONT_HERSHEY_DUPLEX,
                         0.58, (0, 220, 255), 1, cv2.LINE_AA)
             if recording:
@@ -302,8 +313,12 @@ class CameraClient:
     # ═════════════════════════════════════════════
     #  PEREKAMAN FASE KALIBRASI (GYRO / HEAD)
     # ═════════════════════════════════════════════
-    def record_head_phase(sock, gyro, phase, prep_time=Utility.PREP_TIME, web_server = None):
+    def record_head_phase(self, sock, gyro, phase, prep_time=Utility.PREP_TIME, web_server = None,
+                          scr_client = None, cam_client = None):
         pitches, feats = [], []
+
+        if scr_client is None and cam_client is None:
+            return None
 
         # Buang sampel lama supaya tidak tercampur fase sebelumnya
         gyro.drain_samples()
@@ -313,12 +328,12 @@ class CameraClient:
         ok0 = st["connected"] and st["age"] is not None and st["age"] < GyroClient.GYRO_MAX_AGE
         sub = ("gyro OK  pitch=%.0f  rate=%.0f" % (st["pitch"], st["rate"])
             if ok0 else "GYRO TIDAK TERHUBUNG - data tidak akan terekam")
-        if not ScreenClient.screen_prep(sock, phase, prep_time, sub=sub):
+        if not scr_client.screen_prep(sock, phase, prep_time, sub=sub):
             return None
 
         # ── 2. Hitung mundur, diselaraskan dengan beep di ESP32 ──
         gyro.buzz(Utility.BUZZ_COUNT)
-        if not ScreenClient.screen_countdown(sock, phase, ScreenClient.COUNTDOWN_LEAD):
+        if not scr_client.screen_countdown(sock, phase, scr_client.COUNTDOWN_LEAD):
             return None
         # Beep panjang berbunyi TEPAT sekarang = aba-aba "MULAI"
 
@@ -330,7 +345,7 @@ class CameraClient:
             if elapsed >= total:
                 break
 
-            frame = ScreenClient.read_frame(sock)
+            frame = scr_client.read_frame(sock)
             if frame is None:
                 return None
             disp = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
@@ -347,7 +362,7 @@ class CameraClient:
                     pitches.append(s["pitch"])
                     feats.append(Utility.head_feature_vector(s))
 
-            ScreenClient.draw_panel(disp, 0, 80)
+            scr_client.draw_panel(disp, 0, 80)
             cv2.putText(disp, phase["title"], (12, 24), cv2.FONT_HERSHEY_DUPLEX,
                         0.56, (0, 220, 255), 1, cv2.LINE_AA)
             if elapsed >= Utility.SETTLE_TIME:

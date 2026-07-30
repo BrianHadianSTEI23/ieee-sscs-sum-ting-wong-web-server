@@ -137,12 +137,6 @@ class SleepDetectorEngine:
     LEFT_EYE  : Final[float] = [33, 160, 158, 133, 153, 144]
     RIGHT_EYE : Final[float] = [362, 385, 387, 263, 373, 380]
 
-    # Sudut mata (untuk menentukan ROI yang STABIL, tidak ikut mengecil
-    # saat mata tertutup — ini penting supaya ROI terbuka vs tertutup
-    # menutupi area yang sama dan bisa dibandingkan)
-    LEFT_CORNERS  : Final[tuple[int]]  = (33, 133)     # (luar, dalam)
-    RIGHT_CORNERS : Final[tuple[int]]  = (362, 263)    # (dalam, luar)
-
     def __init__(self):
         pass
 
@@ -151,7 +145,7 @@ class SleepDetectorEngine:
     # ═════════════════════════════════════════════
 
     def run_calibration(self, sock, detector, detector_img, ts, gyro=None,
-                    first_prep=None, web_server=None):
+                    first_prep=None, web_server=None, cam_client = None, scr_client = None):
         """
         6 fase kalibrasi MATA, dipandu buzzer, tanpa tombol.
         first_prep: lama jeda sebelum fase PERTAMA (dipakai untuk jeda
@@ -162,34 +156,38 @@ class SleepDetectorEngine:
         print("=" * 60)
 
         data = {}
-        for i, phase in enumerate(self.PHASES):
-            prep = first_prep if (i == 0 and first_prep is not None) else Utility.PREP_TIME
-            arr = CameraClient.record_phase(sock, detector, detector_img, ts, phase,
-                            gyro=gyro, prep_time=prep, web_server=web_server)
-            if arr is None:
-                return None
-            data[phase["key"]] = {"kind": phase["kind"], "X": arr}
-            print(f"  {phase['title']:<26} n={len(arr):3d}   "
-                f"EAR mean={arr[:, 0].mean():.3f}   "
-                f"dark={arr[:, 2].mean():.3f}   spread={arr[:, 5].mean():.3f}")
+        if cam_client is not None and scr_client is not None:
+            for i, phase in enumerate(self.PHASES):
+                prep = first_prep if (i == 0 and first_prep is not None) else Utility.PREP_TIME
+                arr = cam_client.record_phase(sock, detector, detector_img, ts, phase=phase,
+                                gyro=gyro, prep_time=prep, web_server=web_server, scr_client=scr_client,
+                                cam_client=cam_client)
+                if arr is None:
+                    return None
+                data[phase["key"]] = {"kind": phase["kind"], "X": arr}
+                print(f"  {phase['title']:<26} n={len(arr):3d}   "
+                    f"EAR mean={arr[:, 0].mean():.3f}   "
+                    f"dark={arr[:, 2].mean():.3f}   spread={arr[:, 5].mean():.3f}")
         return data
 
-    def run_head_calibration(self, sock, gyro, web_server=None):
+    def run_head_calibration(self, sock, gyro, web_server=None, cam_client = None, scr_client = None):
         """6 fase kalibrasi KEPALA, dipandu buzzer, tanpa tombol."""
         print("\n" + "=" * 60)
         print("  KALIBRASI KEPALA (gyro + accelerometer) — 6 tahap")
         print("=" * 60)
 
         data = {}
-        for phase in self.HEAD_PHASES:
-            d = CameraClient.record_head_phase(sock, gyro, phase, prep_time=Utility.PREP_TIME, 
-                                               web_server=web_server)
-            if d is None:
-                return None
-            data[phase["key"]] = d
-            print(f"  {phase['title']:<32} n={len(d['pitch']):3d}  "
-                f"pitch[{d['pitch'].min():5.1f}..{d['pitch'].max():5.1f}]  "
-                f"prate_max={d['X'][:, 0].max():6.1f}")
+        if cam_client is not None and scr_client is not None:
+            for phase in self.HEAD_PHASES:
+                d = cam_client.record_head_phase(sock, gyro, phase, prep_time=Utility.PREP_TIME, 
+                                                web_server=web_server, scr_client=scr_client,
+                                                cam_client=cam_client)
+                if d is None:
+                    return None
+                data[phase["key"]] = d
+                print(f"  {phase['title']:<32} n={len(d['pitch']):3d}  "
+                    f"pitch[{d['pitch'].min():5.1f}..{d['pitch'].max():5.1f}]  "
+                    f"prate_max={d['X'][:, 0].max():6.1f}")
         return data
 
 
@@ -499,7 +497,12 @@ class SleepDetectorEngine:
     # ═════════════════════════════════════════════
     #  MODE DETEKSI
     # ═════════════════════════════════════════════
-    def run_detection(self, sock, detector, detector_img, ts, prof, gyro, head_prof, web_server = None):
+    def run_detection(self, sock, detector, detector_img, ts, prof, gyro, head_prof, web_server = None,
+                        scr_client = None, cam_client = None):
+
+        if scr_client is None and cam_client is None:
+            return
+        
         w_vec = np.array(prof["w"])
         mu    = np.array(prof["mu"])
         sd    = np.array(prof["sd"])
@@ -550,7 +553,7 @@ class SleepDetectorEngine:
         print("  q=keluar  r=kalibrasi ulang  d=debug  e=toggle ROI\n")
 
         while True:
-            frame = ScreenClient.read_frame(sock)
+            frame = scr_client.read_frame(sock)
             if frame is None:
                 return "disconnect"
             h, w = frame.shape
@@ -558,7 +561,7 @@ class SleepDetectorEngine:
             bgr = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
 
             # Deteksi wajah dengan CLAHE + fallback mode IMAGE
-            lms, face_miss = CameraClient.detect_face(detector, detector_img, frame, ts, face_miss)
+            lms, face_miss = cam_client.detect_face(detector, detector_img, frame, ts, face_miss)
 
             disp = bgr.copy()
             score = None
@@ -567,7 +570,7 @@ class SleepDetectorEngine:
 
             if lms is not None:
                 last_face_time = now
-                vec, boxes = self.extract_features(lms, frame, w, h)
+                vec, boxes = cam_client.extract_features(lms, frame, w, h)
                 if vec is not None:
                     score = float(((vec - mu) / sd) @ w_vec)
                     if show_roi and boxes is not None:
@@ -694,7 +697,7 @@ class SleepDetectorEngine:
             gyro.set_buzzer(alert_active)
 
             # ── Overlay ──
-            ScreenClient.draw_panel(disp, 0, 78, alpha=0.55)
+            scr_client.draw_panel(disp, 0, 78, alpha=0.55)
             if score_ema is None:
                 if eyes_closed and in_grace:
                     # Wajah hilang tapi timer TETAP jalan — beri tahu user

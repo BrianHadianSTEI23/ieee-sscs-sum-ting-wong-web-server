@@ -1865,7 +1865,7 @@ def main():
     util = Utility()
     camClient = CameraClient(ip=DEVICE_IP)
     gyClient = GyroClient(ip=DEVICE_IP)
-    scrlient = ScreenClient()
+    scrClient = ScreenClient()
     web_server = Server(host="0.0.0.0", port=8000)
     sdengine = SleepDetectorEngine()
 
@@ -1905,8 +1905,8 @@ def main():
     sock.connect((camClient._ip, camClient._port))
     print("Terhubung ke kamera.\n")
 
-    print(f"Menghubungkan ke ESP32 gyro {GyroClient.GYRO_IP}:{GyroClient.GYRO_PORT} ...")
-    gyro = GyroClient(GyroClient.GYRO_IP, GyroClient.GYRO_PORT)
+    print(f"Menghubungkan ke ESP32 gyro {gyClient._ip}:{gyClient._port} ...")
+    gyro = gyClient
     gyro.start()
 
     if not gyro.wait_for_gyro(gyro, timeout=10.0, label="Menunggu data gyro"):
@@ -1958,7 +1958,7 @@ def main():
                     print("    (hening)               -> sedang merekam")
                     print("    BEEEEEP panjang        -> fase selesai\n")
 
-                    if not scrlient.screen_wait(
+                    if not scrClient.screen_wait(
                             sock, BOOT_MELODY_TIME + HAT_ADJUST_TIME,
                             "KALIBRASI AKAN DIMULAI",
                             ["Pakai topi dan benahi posisinya sekarang.",
@@ -1975,7 +1975,11 @@ def main():
 
                 data = sdengine.run_calibration(sock, detector, detector_img, ts,
                                        gyro=gyro if buzzer_ok else None,
-                                       first_prep=first_prep)
+                                       first_prep=first_prep,
+                                       web_server=web_server,
+                                       cam_client=camClient,
+                                       scr_client=scrClient
+                                       )
                 if data is None:
                     if buzzer_ok:
                         gyro.buzz(Utility.BUZZ_FAIL)
@@ -1999,7 +2003,10 @@ def main():
 
                 while head_prof is None:
                     if gyro.gyro_ready(gyro):
-                        hdata = sdengine.run_head_calibration(sock, gyro)
+                        hdata = sdengine.run_head_calibration(sock, gyro=gyro, 
+                                                              web_server=web_server,
+                                                            cam_client=camClient,
+                                                            scr_client=scrClient)
                         if hdata is None:
                             gyro.buzz(Utility.BUZZ_FAIL)
                             print("Kalibrasi kepala dibatalkan. Pakai default.\n")
@@ -2039,7 +2046,8 @@ def main():
                         gyro.wait_for_gyro(gyro, timeout=15.0, label="Mencoba lagi")
 
             act = sdengine.run_detection(sock, detector, detector_img, ts, prof,
-                                gyro, head_prof)
+                                gyro, head_prof, web_server=web_server, 
+                                scr_client=scrClient, cam_client=camClient)
             if act == "recalibrate":
                 prof = None
                 head_prof = None

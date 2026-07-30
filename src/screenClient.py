@@ -150,6 +150,7 @@ class ScreenClient:
             cv2.putText(img, ln, (x, y + i * gap), cv2.FONT_HERSHEY_SIMPLEX,
                         scale, color, 1, cv2.LINE_AA)
 
-    def lm_xy(self, landmarks, idx, w, h):
+    @staticmethod
+    def lm_xy(landmarks, idx, w, h):
         lm = landmarks[idx]
         return (lm.x * w, lm.y * h)
