@@ -4,10 +4,21 @@ import urllib
 from typing import Final
 import numpy as np
 
-from sleepDetectorEngine import SleepDetectorEngine
-
-
 class Utility:
+
+    # features of eye-level face
+    FEATURE_NAMES : Final[list[str]] = [
+        "ear",           # geometri: eye aspect ratio
+        "open_norm",     # geometri: bukaan vertikal / jarak antar mata
+        "dark_ratio",    # tampilan: proporsi piksel gelap (pupil/iris)
+        "contrast",      # tampilan: kontras gelap-terang dalam ROI
+        "lap_var",       # tampilan: ketajaman tekstur (iris punya detail)
+        "dark_y_spread", # tampilan: sebaran vertikal piksel gelap
+                        #   pupil = blob bulat  -> sebaran besar
+                        #   bulu mata = garis   -> sebaran kecil
+    ]
+
+    NF : Final[int] = len(FEATURE_NAMES)
 
     MODEL_PATH : Final[str] = "face_landmarker.task"
     MODEL_URL  : Final[str] = ("https://storage.googleapis.com/mediapipe-models/"
@@ -90,7 +101,7 @@ class Utility:
         mA, mC = A.mean(axis=0), C.mean(axis=0)
         Sw = np.cov(A, rowvar=False) * len(A) + np.cov(C, rowvar=False) * len(C)
         Sw /= (len(A) + len(C))
-        Sw += np.eye(SleepDetectorEngine.NF) * 1e-3          # regularisasi
+        Sw += np.eye(Utility.NF) * 1e-3          # regularisasi
 
         w = np.linalg.pinv(Sw) @ (mA - mC)
         n = np.linalg.norm(w)

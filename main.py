@@ -1845,7 +1845,7 @@ from src.utility import Utility
 
 def main():
 
-    DEVICE_IP = "192.168.1.5"    
+    DEVICE_IP = "10.105.38.79"    
 
     BOOT_MELODY_TIME = 1.0     # durasi melodi 'B'
     HAT_ADJUST_TIME  = 10.0    # jeda membenahi posisi topi (sebelum fase 1)
@@ -1863,8 +1863,8 @@ def main():
 
     # init all objects
     util = Utility()
-    camClient = CameraClient()
-    gyClient = GyroClient()
+    camClient = CameraClient(ip=DEVICE_IP)
+    gyClient = GyroClient(ip=DEVICE_IP)
     scrlient = ScreenClient()
     web_server = Server(host="0.0.0.0", port=8000)
     sdengine = SleepDetectorEngine()

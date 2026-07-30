@@ -1,6 +1,6 @@
 
 from typing import Final
-from utility import Utility
+from .utility import Utility
 import struct
 import time
 import cv2
@@ -10,8 +10,7 @@ import numpy as np
 class ScreenClient:
     COUNTDOWN_LEAD : Final[float]  = 2.0     # dari 'C' dikirim s/d beep panjang berbunyi
 
-    def __init__(self, utility : Utility):
-        self._utility = utility
+    def __init__(self):
         pass
 
     # ═════════════════════════════════════════════
@@ -127,11 +126,11 @@ class ScreenClient:
 
 
     def read_frame(self, sock):
-        size_data = self._utility.recv_all(sock, 4)
+        size_data = Utility.recv_all(sock, 4)
         if size_data is None:
             return None
         frame_size = struct.unpack("<I", size_data)[0]
-        jpg = self._utility.recv_all(sock, frame_size)
+        jpg = Utility.recv_all(sock, frame_size)
         if jpg is None:
             return None
         f = cv2.imdecode(np.frombuffer(jpg, dtype=np.uint8), cv2.IMREAD_GRAYSCALE)

@@ -1,8 +1,8 @@
 
-from utility import Utility
-from screenClient import ScreenClient
-from sleepDetectorEngine import SleepDetectorEngine
-from gyroClient import GyroClient
+from .utility import Utility
+from .screenClient import ScreenClient
+# from .sleepDetectorEngine import SleepDetectorEngine
+from .gyroClient import GyroClient
 
 from typing import Final
 import cv2
@@ -14,6 +14,10 @@ class CameraClient:
 
     ESP32_IP : Final[str] = "192.168.1.5"          # kamera ip addr (fallback value)
     PORT     : Final[int] = 1234
+
+    # Landmark EAR
+    LEFT_EYE  : Final[float] = [33, 160, 158, 133, 153, 144]
+    RIGHT_EYE : Final[float] = [362, 385, 387, 263, 373, 380]
 
     # GRACE PERIOD: kalau wajah hilang SEBENTAR sementara mata sedang
     # tertutup, JANGAN reset timer. Kehilangan wajah tepat saat mata
@@ -40,6 +44,120 @@ class CameraClient:
         self._ip = ip
         self._port = port
         pass
+
+    # ═════════════════════════════════════════════
+    #  EKSTRAKSI FITUR
+    # ═════════════════════════════════════════════
+    def eye_roi_box(self, landmarks, corners, w, h):
+        """
+        Kotak ROI mata yang STABIL — ukurannya ditentukan oleh JARAK SUDUT MATA
+        (yang tidak berubah saat mata menutup), bukan oleh tinggi bukaan mata.
+        Dengan begitu ROI mata terbuka & tertutup mencakup area yang sama.
+        """
+        p1 = ScreenClient.lm_xy(landmarks, corners[0], w, h)
+        p2 = ScreenClient.lm_xy(landmarks, corners[1], w, h)
+        cx, cy = (p1[0] + p2[0]) / 2.0, (p1[1] + p2[1]) / 2.0
+        eye_w = Utility.euclidean(p1, p2)
+        if eye_w < 6:
+            return None
+
+        bw = eye_w * 1.15
+        bh = eye_w * 0.72
+
+        x0 = int(round(cx - bw / 2)); x1 = int(round(cx + bw / 2))
+        y0 = int(round(cy - bh / 2)); y1 = int(round(cy + bh / 2))
+
+        x0 = max(0, x0); y0 = max(0, y0)
+        x1 = min(w - 1, x1); y1 = min(h - 1, y1)
+        if x1 - x0 < 8 or y1 - y0 < 6:
+            return None
+        return (x0, y0, x1, y1)
+
+
+    def appearance_features(self, gray, box):
+        """
+        Fitur berbasis tampilan piksel di dalam ROI mata.
+        Semua dinormalisasi terhadap kecerahan kulit (persentil 90)
+        sehingga tahan terhadap perubahan pencahayaan.
+        """
+        x0, y0, x1, y1 = box
+        roi = gray[y0:y1, x0:x1]
+        if roi.size < 48:
+            return None
+
+        roi = cv2.GaussianBlur(roi, (3, 3), 0).astype(np.float32)
+
+        p90 = float(np.percentile(roi, 90))
+        p05 = float(np.percentile(roi, 5))
+        denom = p90 + 1.0
+
+        norm = roi / denom                    # 1.0 = kulit terang
+        contrast = 1.0 - (p05 / denom)        # besar = ada area sangat gelap
+
+        dark_mask = norm < 0.58
+        dark_ratio = float(dark_mask.mean())
+
+        # Sebaran vertikal piksel gelap:
+        #   pupil (blob bulat)      -> sebaran besar
+        #   garis bulu mata (tipis) -> sebaran kecil
+        ys, xs = np.nonzero(dark_mask)
+        rh = roi.shape[0]
+        if len(ys) >= 6 and rh > 1:
+            dark_y_spread = float(np.std(ys) / rh)
+        else:
+            dark_y_spread = 0.0
+
+        # Tekstur: iris & pantulan cahaya menghasilkan tepi tajam
+        eq = cv2.equalizeHist(gray[y0:y1, x0:x1])
+        lap_var = float(cv2.Laplacian(eq, cv2.CV_64F).var() / 1000.0)
+
+        return dark_ratio, contrast, lap_var, dark_y_spread
+
+
+    def eye_aspect_ratio(self, landmarks, eye_idx, w, h):
+        pts = [ScreenClient.lm_xy(landmarks, i, w, h) for i in eye_idx]
+        v1 = Utility.euclidean(pts[1], pts[5])
+        v2 = Utility.euclidean(pts[2], pts[4])
+        hz = Utility.euclidean(pts[0], pts[3])
+        if hz == 0:
+            return None
+        return (v1 + v2) / (2.0 * hz)
+
+
+    def extract_features(self, landmarks, gray, w, h):
+        """Kembalikan vektor fitur (NF,) atau None, plus kotak ROI untuk display."""
+        ear_l = self.eye_aspect_ratio(landmarks, self.LEFT_EYE,  w, h)
+        ear_r = self.eye_aspect_ratio(landmarks, self.RIGHT_EYE, w, h)
+        if ear_l is None or ear_r is None:
+            return None, None
+        ear = (ear_l + ear_r) / 2.0
+
+        # Bukaan vertikal dinormalisasi jarak antar-mata (skala wajah)
+        iod = Utility.euclidean(ScreenClient.lm_xy(landmarks, 33, w, h), ScreenClient.lm_xy(landmarks, 263, w, h))
+        if iod < 10:
+            return None, None
+        open_l = Utility.euclidean(ScreenClient.lm_xy(landmarks, 159, w, h), ScreenClient.lm_xy(landmarks, 145, w, h))
+        open_r = Utility.euclidean(ScreenClient.lm_xy(landmarks, 386, w, h), ScreenClient.lm_xy(landmarks, 374, w, h))
+        open_norm = ((open_l + open_r) / 2.0) / iod
+
+        box_l = self.eye_roi_box(landmarks, self.LEFT_CORNERS,  w, h)
+        box_r = self.eye_roi_box(landmarks, self.RIGHT_CORNERS, w, h)
+        if box_l is None or box_r is None:
+            return None, None
+
+        ap_l = self.appearance_features(gray, box_l)
+        ap_r = self.appearance_features(gray, box_r)
+        if ap_l is None or ap_r is None:
+            return None, None
+
+        dark_ratio    = (ap_l[0] + ap_r[0]) / 2.0
+        contrast      = (ap_l[1] + ap_r[1]) / 2.0
+        lap_var       = (ap_l[2] + ap_r[2]) / 2.0
+        dark_y_spread = (ap_l[3] + ap_r[3]) / 2.0
+
+        vec = np.array([ear, open_norm, dark_ratio, contrast, lap_var,
+                        dark_y_spread], dtype=np.float64)
+        return vec, (box_l, box_r)
 
     def enhance_for_detection(self, gray):
         """
@@ -124,11 +242,11 @@ class CameraClient:
             vec = None
 
             if lms is not None:
-                vec, boxes = SleepDetectorEngine.extract_features(lms, frame, w, h)
+                vec, boxes = self.extract_features(lms, frame, w, h)
                 if boxes is not None:
                     for (x0, y0, x1, y1) in boxes:
                         cv2.rectangle(disp, (x0, y0), (x1, y1), (0, 200, 255), 1)
-                for idx in SleepDetectorEngine.LEFT_EYE + SleepDetectorEngine.RIGHT_EYE:
+                for idx in self.LEFT_EYE + self.RIGHT_EYE:
                     lm = lms[idx]
                     cv2.circle(disp, (int(lm.x * w), int(lm.y * h)), 2,
                             (0, 255, 0), -1)
