@@ -452,13 +452,11 @@ class Server:
                     should_alert_trigger = is_drowsy or (pitch_angle > 25.0)
 
                     if should_alert_trigger and self.alert_manager.should_trigger(now):
-                        msg_text = VoiceAlertManager.RECOMMENDATIONS[
-                            self.alert_manager._msg_index % len(VoiceAlertManager.RECOMMENDATIONS)
-                        ]
-                        self.alert_manager._msg_index += 1
-                        
                         try:
-                            # Generate speech file
+                            # 1. Generate recommendation text using Gemini AI
+                            msg_text = await self.alert_manager.generate_recommendation_ai()
+                            
+                            # 2. Convert text to speech MP3
                             audio_url = await self.alert_manager.generate_speech(msg_text)
                             
                             payload_data["drowsy_alert"] = True
@@ -466,7 +464,7 @@ class Server:
                             payload_data["msg"] = msg_text
                             print(f"[SERVER] Triggered Voice Alert: '{msg_text[:35]}...'")
                         except Exception as e:
-                            print(f"[SERVER ERROR] Failed to generate speech: {e}")
+                            print(f"[SERVER ERROR] Failed to process voice alert: {e}")
                             payload_data["drowsy_alert"] = False
                     else:
                         payload_data["drowsy_alert"] = False
