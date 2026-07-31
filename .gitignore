@@ -3,3 +3,4 @@ face_landmarker.task
 .venv/
 .vscode/
 src/__pycache__/
+.env
