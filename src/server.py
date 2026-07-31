@@ -1,5 +1,6 @@
 # server.py
 
+import os
 import cv2
 import json
 import time
@@ -13,9 +14,14 @@ from fastapi.staticfiles import StaticFiles
 import uvicorn
 from .tts_service import VoiceAlertManager
 
+from dotenv import load_dotenv
+
 
 class Server:
     def __init__(self, host: str = "0.0.0.0", port: int = 65500):
+
+        load_dotenv()
+        
         self.host = host
         self.port = port
         
@@ -34,7 +40,7 @@ class Server:
             "is_drowsy": False  # Track user state
         }
 
-        self.alert_manager = VoiceAlertManager(cooldown_seconds=15.0)
+        self.alert_manager = VoiceAlertManager(api_key= os.getenv("GEMINI_API_KEY"), cooldown_seconds=45.0)
 
         # Initialize FastAPI App
         self.app = FastAPI(title="Microsleep Detector Dashboard")

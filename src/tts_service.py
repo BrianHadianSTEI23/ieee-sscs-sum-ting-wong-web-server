@@ -41,10 +41,10 @@ class VoiceAlertManager:
         return False
 
     async def generate_recommendation_ai(self) -> str:
-        """Generates an urgent 1-paragraph (3-4 sentences) warning & recommendation using Gemini."""
+        """Generates an urgent 1-paragraph (2-3 sentences) warning & recommendation using Gemini."""
         prompt = (
             "You are an urgent driver-safety alert system. "
-            "Write exactly one concise paragraph (3 to 4 sentences) warning the driver about microsleep. "
+            "Write exactly one concise paragraph (2 to 3 sentences) warning the driver about microsleep. "
             "Explain the immediate dangers or impacts of microsleeping, and give clear, "
             "actionable recommendations to quickly reduce or counteract microsleep symptoms. "
             "Keep the tone urgent, direct, and alerting."
@@ -59,7 +59,7 @@ class VoiceAlertManager:
             response = await loop.run_in_executor(
                 None,
                 lambda: self.client.models.generate_content(
-                    model="gemini-2.5-flash",
+                    model="gemini-3.5-flash-lite",
                     contents=prompt,
                     config=types.GenerateContentConfig(
                         temperature=0.7,
