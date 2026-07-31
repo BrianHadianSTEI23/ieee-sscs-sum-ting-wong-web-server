@@ -498,7 +498,7 @@ class SleepDetectorEngine:
     #  MODE DETEKSI
     # ═════════════════════════════════════════════
     def run_detection(self, sock, detector, detector_img, ts, prof, gyro, head_prof, web_server = None,
-                        scr_client = None, cam_client = None):
+                      scr_client = None, cam_client = None):
 
         if scr_client is None and cam_client is None:
             return
@@ -513,8 +513,8 @@ class SleepDetectorEngine:
         nod_model = None
         if head_prof.get("w") is not None and NOD_TH is not None:
             nod_model = {"w":  np.array(head_prof["w"]),
-                        "mu": np.array(head_prof["mu"]),
-                        "sd": np.array(head_prof["sd"])}
+                         "mu": np.array(head_prof["mu"]),
+                         "sd": np.array(head_prof["sd"])}
 
         score_ema        = None
         eyes_closed      = False
@@ -550,7 +550,7 @@ class SleepDetectorEngine:
             print("   deteksi angguk NONAKTIF (belum kalibrasi kepala)")
         if prof.get("excluded"):
             print(f"  Catatan: fase {prof['excluded']} dikeluarkan dari kalibrasi.")
-        print("  q=keluar  r=kalibrasi ulang  d=debug  e=toggle ROI\n")
+        print("  q=keluar   r=kalibrasi ulang   d=debug   e=toggle ROI\n")
 
         while True:
             frame = scr_client.read_frame(sock)
@@ -690,9 +690,18 @@ class SleepDetectorEngine:
                 print(f"[ALERT] MICROSLEEP! ({alert_reason})  "
                     f"mata={closed_duration:.2f}s  menunduk={head_down_duration:.2f}s  "
                     f"nod={nod_score_now:+.2f}")
+                
+                # Push Drowsy Alert State to FastAPI Server
+                if web_server is not None:
+                    web_server.set_drowsy_state(True)
+
             elif not should_alert and alert_active:
                 alert_active = False
                 alert_reason = ""
+
+                # Reset Drowsy Alert State on FastAPI Server
+                if web_server is not None:
+                    web_server.set_drowsy_state(False)
 
             gyro.set_buzzer(alert_active)
 
@@ -727,9 +736,9 @@ class SleepDetectorEngine:
             if gyro_ok:
                 gyro_col = (0, 80, 255) if (head_down or recent_jerk) else (0, 255, 120)
                 posture = f"MENUNDUK {head_down_duration:.1f}s" if head_down else "tegak"
-                nod_txt = f"  nod {nod_score_now:+.2f}" if nod_model is not None else ""
+                nod_txt = f"   nod {nod_score_now:+.2f}" if nod_model is not None else ""
                 gyro_txt = (f"gyro: {g['pitch']:.0f}deg {posture}{nod_txt}" +
-                            ("  [ANGGUK]" if recent_jerk else ""))
+                            ("   [ANGGUK]" if recent_jerk else ""))
             else:
                 gyro_col = (0, 165, 255)
                 gyro_txt = "gyro: TERPUTUS - cek GYRO_IP & WiFi (fallback kamera saja)"
@@ -780,10 +789,18 @@ class SleepDetectorEngine:
                         cv2.FONT_HERSHEY_SIMPLEX, 0.42, (150, 150, 150), 1,
                         cv2.LINE_AA)
 
-            # !! PUSH UPDATES TO WEB SERVER HERE
+            # ── Push updates to FastAPI web server ──
             if web_server is not None:
                 web_server.update_frame(disp)
-                web_server.update_gyro(gyro.get_state())
+                web_server.update_gyro({
+                    "connected": gyro_ok,
+                    "pitch": g["pitch"],
+                    "roll": g.get("roll", 0.0),
+                    "rate": g.get("total_rate", 0.0),
+                    "prate": g.get("pitch_rate", 0.0),
+                    "accdev": g.get("accel_dev", 0.0),
+                    "msg_count": g.get("msg_count", 0)
+                })
 
             cv2.imshow("Microsleep Detector", disp)
             k = cv2.waitKey(1) & 0xFF

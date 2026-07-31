@@ -216,24 +216,19 @@ class GyroClient:
             except Exception as e:
                 print(f"[gyro] gagal kirim perintah buzzer: {e}")
 
-    def gyro_ready(self, gyro):
-        st = gyro.get_state()
+    def gyro_ready(self) -> bool:
+        st = self.get_state()
         return (st["connected"] and st["age"] is not None
-                and st["age"] < GyroClient.GYRO_MAX_AGE)
+                and st["age"] < self.GYRO_MAX_AGE)
 
-
-    def wait_for_gyro(self, gyro, timeout=15.0, label="Menunggu gyro"):
-        """
-        Tunggu sampai gyro benar-benar mengirim data segar.
-        GyroClient otomatis reconnect tiap 2 detik, jadi memberi waktu
-        beberapa belas detik jauh lebih baik daripada langsung menyerah.
-        """
+    def wait_for_gyro(self, timeout=15.0, label="Menunggu gyro") -> bool:
+        time.sleep(1.0)
         print(f"{label} (maks {timeout:.0f} detik)...")
         t0 = time.time()
         last_dot = 0
         while time.time() - t0 < timeout:
-            if self.gyro_ready(gyro):
-                st = gyro.get_state()
+            if self.gyro_ready():
+                st = self.get_state()
                 print(f"  [OK] Gyro siap. pitch={st['pitch']:.1f}  rate={st['rate']:.1f}\n")
                 return True
             if time.time() - last_dot > 1.0:

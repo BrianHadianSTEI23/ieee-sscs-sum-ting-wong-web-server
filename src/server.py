@@ -1,3 +1,5 @@
+# server.py
+
 import cv2
 import json
 import time
@@ -5,9 +7,11 @@ import asyncio
 import threading
 import numpy as np
 from typing import AsyncGenerator, Optional
-from fastapi import FastAPI, Response
+from fastapi import FastAPI
 from fastapi.responses import StreamingResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
 import uvicorn
+from .tts_service import VoiceAlertManager
 
 
 class Server:
@@ -26,11 +30,18 @@ class Server:
             "worst_gap": 0,
             "msg_count": 0,
             "pitch": 0.0, "roll": 0.0, "rate": 0.0, "accdev": 0.0,
-            "gx": 0.0, "gy": 0.0, "gz": 0.0, "prate": 0.0
+            "gx": 0.0, "gy": 0.0, "gz": 0.0, "prate": 0.0,
+            "is_drowsy": False  # Track user state
         }
+
+        self.alert_manager = VoiceAlertManager(cooldown_seconds=15.0)
 
         # Initialize FastAPI App
         self.app = FastAPI(title="Microsleep Detector Dashboard")
+        
+        # Mount static directory to serve generated MP3s
+        self.app.mount("/static", StaticFiles(directory="static"), name="static")
+        
         self._setup_routes()
 
     def update_frame(self, frame: np.ndarray) -> None:
@@ -41,19 +52,25 @@ class Server:
     def update_gyro(self, data: dict) -> None:
         """Thread-safe method called by GyroClient to push telemetry data."""
         with self._gyro_lock:
+            # Preserve is_drowsy state across telemetry updates
+            drowsy_state = self._latest_gyro.get("is_drowsy", False)
             self._latest_gyro = data.copy()
+            self._latest_gyro["is_drowsy"] = drowsy_state
+
+    def set_drowsy_state(self, is_drowsy: bool) -> None:
+        """Called by SleepDetectorEngine to set current user alertness state."""
+        with self._gyro_lock:
+            self._latest_gyro["is_drowsy"] = is_drowsy
 
     def _generate_mjpeg_stream(self):
         """Generator function that yields JPEG frames for MJPEG streaming."""
         while True:
             with self._frame_lock:
                 if self._latest_frame is None:
-                    # Fallback black frame if engine is initializing
                     frame_to_send = np.zeros((480, 640, 3), dtype=np.uint8)
                 else:
                     frame_to_send = self._latest_frame
 
-            # Encode frame to JPEG
             success, buffer = cv2.imencode('.jpg', frame_to_send)
             if not success:
                 time.sleep(0.03)
@@ -63,14 +80,14 @@ class Server:
             yield (b'--frame\r\n'
                    b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
             
-            time.sleep(0.03)  # Approx ~30 FPS throttle
+            time.sleep(0.03)  # ~30 FPS throttle
 
     def _setup_routes(self):
         """Define FastAPI endpoints."""
 
         @self.app.get("/", response_class=HTMLResponse)
         async def dashboard():
-            """Returns simple embedded HTML dashboard."""
+            """Returns embedded HTML dashboard with mobile browser Web Audio API handling."""
             return """
             <!DOCTYPE html>
             <html lang="en">
@@ -88,13 +105,10 @@ class Server:
                         --accent-blue: #38bdf8;
                         --status-online: #10b981;
                         --status-offline: #ef4444;
+                        --status-alert: #f59e0b;
                     }
 
-                    * {
-                        box-sizing: border-box;
-                        margin: 0;
-                        padding: 0;
-                    }
+                    * { box-sizing: border-box; margin: 0; padding: 0; }
 
                     body {
                         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -104,13 +118,13 @@ class Server:
                         line-height: 1.5;
                         display: flex;
                         flex-direction: column;
-                        align-items: center; /* Centers the main layout container */
+                        align-items: center;
                         min-height: 100vh;
                     }
 
                     .dashboard-wrapper {
                         width: 100%;
-                        max-width: 1000px; /* Constrains total layout width for centered look */
+                        max-width: 1000px;
                         display: flex;
                         flex-direction: column;
                         align-items: center;
@@ -118,7 +132,7 @@ class Server:
 
                     header {
                         width: 100%;
-                        text-align: center; /* Centered title and subtitle */
+                        text-align: center;
                         margin-bottom: 28px;
                         border-bottom: 1px solid var(--panel-border);
                         padding-bottom: 20px;
@@ -139,11 +153,11 @@ class Server:
 
                     .dashboard-grid {
                         display: flex;
-                        justify-content: center; /* Centers video & gyro cards side-by-side */
+                        justify-content: center;
                         align-items: stretch;
                         gap: 20px;
                         width: 100%;
-                        flex-wrap: wrap; /* Stacks gracefully on narrower screens */
+                        flex-wrap: wrap;
                     }
 
                     .card {
@@ -153,9 +167,7 @@ class Server:
                         overflow: hidden;
                     }
 
-                    .video-card {
-                        flex: 0 0 auto;
-                    }
+                    .video-card { flex: 0 0 auto; }
 
                     .video-card img {
                         display: block;
@@ -175,7 +187,7 @@ class Server:
                         display: flex;
                         justify-content: space-between;
                         align-items: center;
-                        margin-bottom: 20px;
+                        margin-bottom: 16px;
                         padding-bottom: 12px;
                         border-bottom: 1px solid var(--panel-border);
                     }
@@ -226,10 +238,44 @@ class Server:
                         background-color: var(--status-offline);
                     }
 
+                    .btn-audio {
+                        width: 100%;
+                        padding: 10px;
+                        margin-bottom: 16px;
+                        background: var(--panel-border);
+                        color: var(--text-main);
+                        border: 1px solid #3b4252;
+                        border-radius: 6px;
+                        font-size: 0.85rem;
+                        font-weight: 600;
+                        cursor: pointer;
+                        transition: all 0.2s ease;
+                    }
+
+                    .btn-audio.active {
+                        background: rgba(56, 189, 248, 0.15);
+                        color: var(--accent-blue);
+                        border-color: var(--accent-blue);
+                    }
+
+                    .alert-banner {
+                        display: none;
+                        background: rgba(245, 158, 11, 0.15);
+                        border: 1px solid var(--status-alert);
+                        color: var(--status-alert);
+                        padding: 12px;
+                        border-radius: 6px;
+                        font-size: 0.8rem;
+                        margin-bottom: 16px;
+                        line-height: 1.4;
+                    }
+
+                    .alert-banner.visible { display: block; }
+
                     .metrics-group {
                         display: flex;
                         flex-direction: column;
-                        gap: 14px;
+                        gap: 12px;
                     }
 
                     .metric-row {
@@ -239,9 +285,7 @@ class Server:
                         font-size: 0.9rem;
                     }
 
-                    .metric-label {
-                        color: var(--text-muted);
-                    }
+                    .metric-label { color: var(--text-muted); }
 
                     .metric-value {
                         font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
@@ -252,26 +296,22 @@ class Server:
                     .divider {
                         height: 1px;
                         background-color: var(--panel-border);
-                        margin: 6px 0;
+                        margin: 4px 0;
                     }
                 </style>
             </head>
             <body>
                 <div class="dashboard-wrapper">
-                    <!-- Header Title (Centered) -->
                     <header>
                         <h1>Microsleep Telemetry Dashboard</h1>
                         <div class="subtitle">Real-Time Vision & Inertial Sensor Monitoring</div>
                     </header>
 
-                    <!-- Centered Main Content -->
                     <main class="dashboard-grid">
-                        <!-- Video Stream Feed -->
                         <div class="card video-card">
                             <img src="/video_feed" alt="Live Camera Feed">
                         </div>
 
-                        <!-- Telemetry Panel -->
                         <div class="card telemetry-card">
                             <div class="card-header">
                                 <span class="card-title">IMU Telemetry</span>
@@ -279,6 +319,15 @@ class Server:
                                     <span class="indicator"></span>
                                     <span id="status-text">DISCONNECTED</span>
                                 </div>
+                            </div>
+
+                            <button id="audio-toggle-btn" class="btn-audio" onclick="unlockMobileAudio()">
+                                🔊 Enable Voice Alerts
+                            </button>
+
+                            <div id="voice-alert-banner" class="alert-banner">
+                                <strong>⚠️ Voice Guidance Active:</strong>
+                                <div id="voice-alert-text"></div>
                             </div>
 
                             <div class="metrics-group">
@@ -315,12 +364,26 @@ class Server:
                 </div>
 
                 <script>
+                    const globalAudio = new Audio();
+                    let audioUnlocked = false;
+
+                    function unlockMobileAudio() {
+                        globalAudio.src = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=";
+                        globalAudio.play().then(() => {
+                            audioUnlocked = true;
+                            const btn = document.getElementById('audio-toggle-btn');
+                            btn.innerText = "✓ Voice Alerts Enabled";
+                            btn.classList.add("active");
+                        }).catch(err => {
+                            console.error("Audio unlock blocked by browser:", err);
+                        });
+                    }
+
                     const evtSource = new EventSource("/api/gyro/stream");
 
                     evtSource.onmessage = function(event) {
                         const data = JSON.parse(event.data);
 
-                        // Safe value updates
                         document.getElementById('pitch').innerText = (data.pitch ?? 0).toFixed(1) + "°";
                         document.getElementById('roll').innerText = (data.roll ?? 0).toFixed(1) + "°";
                         document.getElementById('rate').innerText = (data.rate ?? 0).toFixed(1);
@@ -328,7 +391,6 @@ class Server:
                         document.getElementById('accdev').innerText = (data.accdev ?? 0).toFixed(2);
                         document.getElementById('msg_count').innerText = data.msg_count ?? 0;
 
-                        // Update Status Badge UI
                         const badgeEl = document.getElementById('status-badge');
                         const textEl = document.getElementById('status-text');
 
@@ -339,6 +401,28 @@ class Server:
                             badgeEl.className = "status-badge offline";
                             textEl.innerText = "DISCONNECTED";
                         }
+
+                        // Play audio and show banner when alert is triggered
+                        if (data.drowsy_alert && data.audio_url) {
+                            const banner = document.getElementById('voice-alert-banner');
+                            const bannerText = document.getElementById('voice-alert-text');
+                            
+                            bannerText.innerText = data.msg;
+                            banner.classList.add("visible");
+
+                            if (audioUnlocked) {
+                                globalAudio.pause();
+                                globalAudio.src = data.audio_url;
+                                globalAudio.load();
+                                globalAudio.play().catch(e => console.warn("Audio playback error:", e));
+                            } else {
+                                console.warn("Audio alert received but browser audio is locked. Click 'Enable Voice Alerts'.");
+                            }
+
+                            setTimeout(() => {
+                                banner.classList.remove("visible");
+                            }, 12000);
+                        }
                     };
                 </script>
             </body>
@@ -347,7 +431,6 @@ class Server:
 
         @self.app.get("/video_feed")
         async def video_feed():
-            """MJPEG video stream endpoint."""
             return StreamingResponse(
                 self._generate_mjpeg_stream(),
                 media_type="multipart/x-mixed-replace; boundary=frame"
@@ -355,18 +438,45 @@ class Server:
 
         @self.app.get("/api/gyro/stream")
         async def stream_gyro_data() -> StreamingResponse:
-            """Server-Sent Event (SSE) endpoint pushing live gyro telemetry."""
+            """Server-Sent Event (SSE) endpoint pushing telemetry and AI audio notifications."""
             async def event_generator() -> AsyncGenerator[str, None]:
                 while True:
+                    now = time.time()
                     with self._gyro_lock:
-                        payload = json.dumps(self._latest_gyro)
-                    yield f"data: {payload}\n\n"
-                    await asyncio.sleep(0.01) # 10 Hz refresh rate
+                        payload_data = self._latest_gyro.copy()
+                    
+                    is_drowsy = payload_data.get("is_drowsy", False)
+                    pitch_angle = abs(payload_data.get("pitch", 0.0))
+                    
+                    # TRIGGER CONDITION: Drowsiness detected OR Pitch angle > 25.0°
+                    should_alert_trigger = is_drowsy or (pitch_angle > 25.0)
+
+                    if should_alert_trigger and self.alert_manager.should_trigger(now):
+                        msg_text = VoiceAlertManager.RECOMMENDATIONS[
+                            self.alert_manager._msg_index % len(VoiceAlertManager.RECOMMENDATIONS)
+                        ]
+                        self.alert_manager._msg_index += 1
+                        
+                        try:
+                            # Generate speech file
+                            audio_url = await self.alert_manager.generate_speech(msg_text)
+                            
+                            payload_data["drowsy_alert"] = True
+                            payload_data["audio_url"] = f"{audio_url}?t={int(now)}"
+                            payload_data["msg"] = msg_text
+                            print(f"[SERVER] Triggered Voice Alert: '{msg_text[:35]}...'")
+                        except Exception as e:
+                            print(f"[SERVER ERROR] Failed to generate speech: {e}")
+                            payload_data["drowsy_alert"] = False
+                    else:
+                        payload_data["drowsy_alert"] = False
+
+                    yield f"data: {json.dumps(payload_data)}\n\n"
+                    await asyncio.sleep(0.1) # 10 Hz refresh rate
 
             return StreamingResponse(event_generator(), media_type="text/event-stream")
 
     def run_in_thread(self):
-        """Run FastAPI server non-blocking inside a daemon thread."""
         thread = threading.Thread(
             target=uvicorn.run,
             kwargs={
@@ -379,16 +489,3 @@ class Server:
         )
         thread.start()
         print(f"[*] Dashboard Web Server running at http://{self.host}:{self.port}")
-
-
-# Example Integration
-if __name__ == "__main__":
-    server = Server()
-    server.run_in_thread()
-
-    # Keep main thread alive for testing simulation
-    try:
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        pass

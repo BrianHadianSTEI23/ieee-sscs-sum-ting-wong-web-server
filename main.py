@@ -1826,13 +1826,8 @@ os.environ["GLOG_minloglevel"] = "2"
 os.environ["ABSL_MIN_LOG_LEVEL"] = "2"
 
 import socket
-# import struct
 import time
-# import json
-# import urllib.request
 import cv2
-# import numpy as np
-# import mediapipe as mp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 
@@ -1917,7 +1912,7 @@ def main():
     gyro = gyClient
     gyro.start()
 
-    if not gyro.wait_for_gyro(gyro, timeout=10.0, label="Menunggu data gyro"):
+    if not gyro.wait_for_gyro(timeout=10.0, label="Menunggu data gyro"):
         print("      Sistem tetap jalan; gyro akan terus dicoba di latar.")
         print(f"      Pastikan GYRO_IP={GyroClient.GYRO_IP} benar dan ESP32 gyro")
         print("      ada di WiFi/hotspot yang sama.\n")
