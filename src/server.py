@@ -24,7 +24,7 @@ class Server:
     def __init__(self, host: str = "0.0.0.0", port: int = 65500):
 
         load_dotenv()
-
+                
         self.host = host
         self.port = port
         
@@ -43,6 +43,7 @@ class Server:
             "is_drowsy": False  # Track user state
         }
 
+        self.alert_manager = VoiceAlertManager(api_key= os.getenv("GEMINI_API_KEY"), cooldown_seconds=45.0)
         self.alert_manager = VoiceAlertManager(api_key=os.getenv("GEMINI_API_KEY"), cooldown_seconds=45.0)
 
         # Initialize FastAPI App

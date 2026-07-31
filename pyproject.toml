@@ -12,6 +12,7 @@ dependencies = [
     "numpy>=2.5.1",
     "opencv-python>=5.0.0.93",
     "pydantic>=2.13.4",
+    "python-dotenv>=1.2.2",
     "uvicorn>=0.52.0",
     "zeroconf>=0.150.0",
 ]
