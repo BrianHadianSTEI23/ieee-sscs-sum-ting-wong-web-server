@@ -93,3 +93,41 @@ class VoiceAlertManager:
         except Exception as e:
             print(f"[TTS ERROR] Failed to generate TTS audio: {e}")
             raise e
+
+    async def analyze_driver_response(self, user_speech: str) -> dict:
+        """Analyzes driver feedback after a microsleep alert and generates an appropriate response."""
+        prompt = (
+            "You are an active in-car AI safety assistant. A driver was just alerted for microsleep.\n"
+            f"The driver responded: '{user_speech}'\n\n"
+            "Task:\n"
+            "1. Assess if the driver is taking appropriate action (e.g., pulling over, taking a break) "
+            "or making a dangerous choice (e.g., claiming they are fine despite drowsy telemetry).\n"
+            "2. Respond directly to the driver in 1 to 2 short, calm, and firm sentences.\n"
+            "3. If they say they are pulling over, confirm and support them. "
+            "If they deny being tired, firmly emphasize that microsleep is involuntary."
+        )
+
+        if not self.client:
+            reply_text = "Understood. Please prioritize your safety and pull over if fatigue continues."
+        else:
+            try:
+                loop = asyncio.get_running_loop()
+                response = await loop.run_in_executor(
+                    None,
+                    lambda: self.client.models.generate_content(
+                        model="gemini-2.5-flash",
+                        contents=prompt,
+                        config=types.GenerateContentConfig(
+                            temperature=0.4,
+                            max_output_tokens=100,
+                        )
+                    )
+                )
+                reply_text = response.text.strip()
+            except Exception as e:
+                print(f"[GEMINI ERROR] Driver response analysis failed: {e}")
+                reply_text = "Please pull over safely when you can."
+
+        # Generate audio response for the follow-up
+        audio_url = await self.generate_speech(reply_text)
+        return {"reply_text": reply_text, "audio_url": audio_url}

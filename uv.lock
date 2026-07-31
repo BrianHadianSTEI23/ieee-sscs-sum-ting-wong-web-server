@@ -555,6 +555,7 @@ dependencies = [
     { name = "mediapipe" },
     { name = "numpy" },
     { name = "opencv-python" },
+    { name = "pydantic" },
     { name = "uvicorn" },
     { name = "zeroconf" },
 ]
@@ -567,6 +568,7 @@ requires-dist = [
     { name = "mediapipe", specifier = ">=1.0.0" },
     { name = "numpy", specifier = ">=2.5.1" },
     { name = "opencv-python", specifier = ">=5.0.0.93" },
+    { name = "pydantic", specifier = ">=2.13.4" },
     { name = "uvicorn", specifier = ">=0.52.0" },
     { name = "zeroconf", specifier = ">=0.150.0" },
 ]

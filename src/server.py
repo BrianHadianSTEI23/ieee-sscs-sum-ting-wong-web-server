@@ -11,8 +11,11 @@ from fastapi import FastAPI
 from fastapi.responses import StreamingResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 import uvicorn
+from pydantic import BaseModel
 from .tts_service import VoiceAlertManager
 
+class DriverResponseRequest(BaseModel):
+    user_speech: str
 
 class Server:
     def __init__(self, host: str = "0.0.0.0", port: int = 65500):
@@ -424,6 +427,71 @@ class Server:
                             }, 12000);
                         }
                     };
+
+                    let isListening = false;
+
+                    function listenToDriverOnce() {
+                        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+                        if (!SpeechRecognition) {
+                            console.warn("Speech recognition not supported on this browser.");
+                            return;
+                        }
+
+                        if (isListening) return;
+                        
+                        const recognition = new SpeechRecognition();
+                        recognition.lang = 'en-US';
+                        recognition.interimResults = false;
+                        recognition.maxAlternatives = 1;
+
+                        // Visual feedback indicator
+                        const bannerText = document.getElementById('voice-alert-text');
+                        bannerText.innerText = "🎙️ Listening... Speak now (e.g., 'Pulling over soon')";
+
+                        recognition.onstart = () => { isListening = true; };
+
+                        recognition.onresult = async (event) => {
+                            const userSpeech = event.results[0][0].transcript;
+                            console.log("Captured driver speech:", userSpeech);
+                            bannerText.innerText = `You said: "${userSpeech}" (Analyzing...)`;
+
+                            // Send transcript to backend
+                            try:
+                                const res = await fetch('/api/driver/response', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ user_speech: userSpeech })
+                                });
+                                const data = await res.json();
+
+                                if (data.status === 'success' && data.audio_url) {
+                                    bannerText.innerText = data.reply_text;
+                                    globalAudio.src = data.audio_url;
+                                    globalAudio.play();
+                                }
+                            } catch (err) {
+                                console.error("Error sending response:", err);
+                            }
+                        };
+
+                        recognition.onerror = (err) => {
+                            console.warn("Speech recognition error or timeout:", err.error);
+                        };
+
+                        recognition.onend = () => { isListening = false; };
+
+                        // Start 5-second listening window
+                        recognition.start();
+                    }
+
+                    // Attach listener to audio element completion
+                    globalAudio.onended = () => {
+                        // Only trigger voice recognition if this audio was a drowsy warning
+                        if (window.lastAlertTriggered) {
+                            window.lastAlertTriggered = false; // Reset single-shot flag
+                            listenToDriverOnce();
+                        }
+                    };
                 </script>
             </body>
             </html>
@@ -473,6 +541,19 @@ class Server:
                     await asyncio.sleep(0.1) # 10 Hz refresh rate
 
             return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+        @self.app.post("/api/driver/response")
+        async def handle_driver_response(payload: DriverResponseRequest):
+            """Handles driver voice response captured by the frontend after an alert."""
+            if not payload.user_speech.strip():
+                return {"status": "ignored", "reason": "Empty input"}
+
+            result = await self.alert_manager.analyze_driver_response(payload.user_speech)
+            return {
+                "status": "success",
+                "reply_text": result["reply_text"],
+                "audio_url": f"{result['audio_url']}?t={int(time.time())}"
+            }
 
     def run_in_thread(self):
         thread = threading.Thread(
